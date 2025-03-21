@@ -1,8 +1,10 @@
-import type { Plugin } from "payload";
+import type { AuthCollection, CollectionConfig, Plugin } from "payload";
 import {
+  BetterAuthReturn,
   payloadBetterAuth,
   type PayloadBetterAuthOptions,
 } from "@payload-auth/better-auth-plugin";
+import { generateVerifyEmailUrl } from "@payload-auth/better-auth-plugin";
 import {
   admin,
   multiSession,
@@ -22,9 +24,8 @@ import {
 import { nextCookies } from "better-auth/next-js";
 import { passkey } from "better-auth/plugins/passkey";
 import { emailHarmony, phoneHarmony } from "better-auth-harmony";
-import { setSessionCookie } from "better-auth/cookies";
 
-const betterAuthPlugins = [
+export const betterAuthPlugins = [
   emailHarmony(),
   phoneHarmony({
     defaultCountry: "CA",
@@ -102,6 +103,7 @@ export const betterAuthOptions: PayloadBetterAuthOptions = {
   baseURL: "http://localhost:3000",
   emailAndPassword: {
     enabled: true,
+    requireEmailVerification: true,
     async sendResetPassword({ user, url }) {
       console.log("Send reset password for user: ", user, url);
     },
@@ -146,6 +148,8 @@ export const betterAuthOptions: PayloadBetterAuthOptions = {
     additionalFields: {
       role: {
         type: "string",
+        defaultValue: "user",
+        input: false,
       },
     },
   },
@@ -173,6 +177,32 @@ export const plugins: Plugin[] = [
       slug: "users",
       hidden: false,
       adminRoles: ["admin"],
+      allowedFields: ["name"],
+      collectionOverrides: ({ collection }) => {
+        return {
+          ...collection,
+          auth: {
+            ...(typeof collection?.auth === 'object' ? collection.auth : {}),
+            verify: {
+              generateEmailHTML: async ({ user, req, token }) => {
+                const betterAuth = (req.payload as any).betterAuth as BetterAuthReturn<BetterAuthPlugins>
+                const authContext = await betterAuth.$context
+                const verifyUrl = await generateVerifyEmailUrl({
+                  userEmail: user.email,
+                  secret: authContext.secret,
+                  expiresIn: betterAuth.options?.emailVerification?.expiresIn || 3600,
+                  verifyRouteUrl: `${req.payload.config.serverURL}/api/auth/verify-email`,
+                  callbackURL: "/dashboard",
+                })
+
+                console.log('generateEmailHTML verifyUrl',verifyUrl)
+                
+                return `<p>Verify your email by clicking <a href="${verifyUrl}">here</a></p>`
+              }
+            }
+          }
+        } satisfies CollectionConfig
+      },
     },
     accounts: {
       slug: "accounts",

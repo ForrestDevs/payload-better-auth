@@ -11,7 +11,11 @@ import { getRequiredCollectionSlugs } from './lib/get-required-collection-slugs.
 import { buildCollectionConfigs } from './lib/build-collection-configs.js'
 import { payloadAdapter } from '@payload-auth/better-auth-db-adapter'
 import { betterAuth } from 'better-auth'
+import { setAfterAuthMiddlewareHook } from './lib/set-after-auth-middleware-hook.js'
+import { syncVerificationSettings } from './lib/sync-verification-settings.js'
+
 export * from './types.js'
+export * from './helpers/index.js'
 
 function initBetterAuth<P extends TPlugins>({
   payload,
@@ -40,7 +44,7 @@ export function payloadBetterAuth(pluginOptions: PayloadBetterAuthPluginOptions)
       config.collections = []
     }
 
-    const sanitzedBetterAuthOptions = sanitizeBetterAuthOptions(pluginOptions)
+    let sanitzedBetterAuthOptions = sanitizeBetterAuthOptions(pluginOptions)
 
     // Determine which collections to add based on the options and plugins
     const requiredCollectionSlugs = getRequiredCollectionSlugs({
@@ -57,47 +61,16 @@ export function payloadBetterAuth(pluginOptions: PayloadBetterAuthPluginOptions)
       sanitizedBAOptions: sanitzedBetterAuthOptions,
     })
 
-    // Initialize admin configuration with defaults using deep merge pattern
-    config.admin = {
-      ...config.admin,
-      components: {
-        ...config.admin?.components,
-        afterLogin: [
-          {
-            path: '@payload-auth/better-auth-plugin/rsc#LoginRedirect',
-          },
-          ...(config.admin?.components?.afterLogin || []),
-        ],
-        logout: {
-          Button: '@payload-auth/better-auth-plugin/client#LogoutButton',
-        },
-        views: {
-          ...config.admin?.components?.views,
-          login: {
-            path: '/login',
-            Component: {
-              path: '@payload-auth/better-auth-plugin/rsc#Login',
-              serverProps: {
-                defaultAdminRole: pluginOptions.users?.adminRoles?.[0],
-              },
-            },
-          },
-          createFirstAdmin: {
-            path: '/create-first-admin',
-            Component: {
-              path: '@payload-auth/better-auth-plugin/rsc#CreateFirstAdmin',
-              serverProps: {
-                defaultAdminRole: pluginOptions.users?.adminRoles?.[0],
-              },
-            },
-          },
-        },
-      },
-      routes: {
-        ...config.admin?.routes,
-        login: '/login-redirect',
-      },
-    }
+    syncVerificationSettings({
+      collections: config.collections,
+      sanitizedBAOptions: sanitzedBetterAuthOptions,
+    })
+
+    setAfterAuthMiddlewareHook({
+      sanitizedOptions: sanitzedBetterAuthOptions,
+      payloadConfig: config,
+      pluginOptions,
+    })
 
     const incomingOnInit = config.onInit
 

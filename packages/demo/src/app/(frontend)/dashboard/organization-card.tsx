@@ -190,11 +190,11 @@ export function OrganizationCard(props: {
                     <Avatar>
                       <AvatarImage src={session?.user.image || ""} />
                       <AvatarFallback>
-                        {session?.user.name?.charAt(0)}
+                        {session?.user?.name?.charAt(0)}
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="text-sm">{session?.user.name}</p>
+                      <p className="text-sm">{session?.user?.name}</p>
                       <p className="text-xs text-muted-foreground">Owner</p>
                     </div>
                   </div>

@@ -108,12 +108,12 @@ export default function UserCard(props: {
                   className="object-cover"
                 />
               ) : (
-                <AvatarFallback>{session?.user.name.charAt(0)}</AvatarFallback>
+                <AvatarFallback>{session?.user?.name?.charAt(0)}</AvatarFallback>
               )}
             </Avatar>
             <div className="grid gap-1">
               <p className="text-sm font-medium leading-none">
-                {session?.user.name}
+                {session?.user?.name}
               </p>
               <p className="text-sm">{session?.user.email}</p>
             </div>

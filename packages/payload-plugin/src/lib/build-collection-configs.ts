@@ -1,7 +1,18 @@
-import { CollectionConfig } from 'payload'
+import type { CollectionConfig, Field } from 'payload'
 import type { PayloadBetterAuthPluginOptions, SanitizedBetterAuthOptions } from '../types.js'
 import { baseCollectionSlugs, betterAuthPluginSlugs } from './config.js'
 import { betterAuthStrategy } from './auth-strategy.js'
+import { getAfterLogoutHook } from '../collections/users/hooks/after-logout.js'
+import { getRefreshTokenEndpoint } from '../collections/users/endpoints/refresh-token.js'
+import {
+  isAdminOrCurrentUserUpdateWithAllowedFields,
+  isAdminOrCurrentUserWithRoles,
+  isAdminWithRoles,
+} from './payload-access.js'
+import { cleanUpUserAfterDelete } from '../collections/users/hooks/clean-up-user-after-delete.js'
+import { getSyncPasswordToUserHook } from '../collections/accounts/hooks/sync-password-to-user.js'
+import { getSyncAccountHook } from '../collections/users/hooks/sync-account.js'
+import { onVerifiedChange } from '../collections/users/hooks/on-verified-change.js'
 
 /**
  * Builds the required collections based on the BetterAuth options and plugins
@@ -22,6 +33,38 @@ export function buildCollectionConfigs({
   const sessionSlug = pluginOptions.sessions?.slug ?? baseCollectionSlugs.sessions
   const verificationSlug = pluginOptions.verifications?.slug ?? baseCollectionSlugs.verifications
   const baPlugins = sanitizedBAOptions.plugins ?? null
+  const adminRoles = pluginOptions.users?.adminRoles ?? ['admin']
+
+  const getTimestampFields = ({
+    saveUpdatedAtToJWT = true,
+    saveCreatedAtToJWT = true,
+  }: {
+    saveUpdatedAtToJWT?: boolean;
+    saveCreatedAtToJWT?: boolean;
+  } = {}): Field[] => {
+    return [{
+      name: 'updatedAt',
+      type: 'date',
+      saveToJWT: saveUpdatedAtToJWT,
+      admin: {
+        disableBulkEdit: true,
+        hidden: true,
+      },
+      index: true,
+      label: ({ t }) => t('general:updatedAt'),
+    },
+    {
+      name: 'createdAt',
+      saveToJWT: saveCreatedAtToJWT,
+      admin: {
+        disableBulkEdit: true,
+        hidden: true,
+      },
+      type: 'date',
+      index: true,
+      label: ({ t }) => t('general:createdAt'),
+    }]
+  }
 
   const enhancedCollections: CollectionConfig[] = []
 
@@ -31,24 +74,59 @@ export function buildCollectionConfigs({
         const existingUserCollection = incomingCollections.find(
           (collection) => collection.slug === userSlug,
         ) as CollectionConfig | undefined
-        const usersCollection: CollectionConfig = {
+        const allowedFields = pluginOptions.users?.allowedFields ?? ['name']
+        let usersCollection: CollectionConfig = {
           ...existingUserCollection,
           slug: userSlug,
           admin: {
-            ...existingUserCollection?.admin,
             defaultColumns: ['email'],
             useAsTitle: 'email',
+            ...existingUserCollection?.admin,
             hidden: pluginOptions.users?.hidden ?? false,
-            components: {},
+          },
+          access: {
+            admin: ({ req }) => adminRoles.includes((req.user?.role as string) ?? 'user'),
+            read: isAdminOrCurrentUserWithRoles({ adminRoles, idField: 'id' }),
+            create: isAdminWithRoles({ adminRoles }),
+            delete: isAdminOrCurrentUserWithRoles({ adminRoles, idField: 'id' }),
+            update: isAdminOrCurrentUserUpdateWithAllowedFields({
+              allowedFields,
+              adminRoles,
+              userSlug,
+            }),
+            ...(existingUserCollection?.access ?? {}),
+          },
+          endpoints: [
+            ...(existingUserCollection?.endpoints ? existingUserCollection.endpoints : []),
+            getRefreshTokenEndpoint({ userSlug }),
+          ],
+          hooks: {
+            beforeChange: [
+              ...(existingUserCollection?.hooks?.beforeChange ?? []),
+              onVerifiedChange,
+            ],
+            afterChange: [
+              ...(existingUserCollection?.hooks?.afterChange ?? []),
+              getSyncAccountHook({
+                userSlug,
+                accountSlug,
+              })
+            ],
+            afterLogout: [
+              ...(existingUserCollection?.hooks?.afterLogout ?? []),
+              getAfterLogoutHook({ sessionsCollectionSlug: sessionSlug }),
+            ],
+            afterDelete: [
+              ...(existingUserCollection?.hooks?.afterDelete ?? []),
+              (args) => cleanUpUserAfterDelete(args as any),
+            ],
           },
           auth: {
             ...(existingUserCollection && typeof existingUserCollection.auth === 'object'
               ? existingUserCollection.auth
               : {}),
-            disableLocalStrategy: true,
-            strategies: [
-              betterAuthStrategy(pluginOptions.users?.adminRoles ?? ['admin'], userSlug),
-            ],
+            //disableLocalStrategy: false,
+            strategies: [betterAuthStrategy(adminRoles, userSlug)],
           },
           fields: [
             ...(existingUserCollection?.fields ?? []),
@@ -56,6 +134,7 @@ export function buildCollectionConfigs({
               name: 'betterAuthAdminButtons',
               type: 'ui',
               admin: {
+                position: 'sidebar',
                 components: {
                   Field: {
                     path: '@payload-auth/better-auth-plugin/client#AdminButtons',
@@ -76,6 +155,7 @@ export function buildCollectionConfigs({
               name: 'name',
               type: 'text',
               label: 'Name',
+              saveToJWT: true,
               admin: {
                 description: 'Users chosen display name',
               },
@@ -96,6 +176,7 @@ export function buildCollectionConfigs({
               type: 'checkbox',
               required: true,
               defaultValue: false,
+              saveToJWT: true,
               label: 'Email Verified',
               admin: {
                 description: 'Whether the email of the user has been verified',
@@ -105,6 +186,7 @@ export function buildCollectionConfigs({
               name: 'image',
               type: 'text',
               label: 'Image',
+              saveToJWT: true,
               admin: {
                 description: 'The image of the user',
               },
@@ -114,6 +196,7 @@ export function buildCollectionConfigs({
               type: 'select',
               required: true,
               defaultValue: 'user',
+              saveToJWT: true,
               options: [
                 ...(
                   pluginOptions.users?.roles ?? [
@@ -135,8 +218,8 @@ export function buildCollectionConfigs({
                 description: 'The role of the user',
               },
             },
+            ...getTimestampFields({ saveUpdatedAtToJWT: false, saveCreatedAtToJWT: false }),
           ],
-          timestamps: true,
         }
         if (baPlugins) {
           baPlugins.forEach((plugin) => {
@@ -253,19 +336,40 @@ export function buildCollectionConfigs({
             }
           })
         }
+        
+        if (pluginOptions.users?.collectionOverrides) {
+          usersCollection = pluginOptions.users.collectionOverrides({ collection: usersCollection })
+        }
+        
         enhancedCollections.push(usersCollection)
         break
       case baseCollectionSlugs.accounts:
         const existingAccountCollection = incomingCollections.find(
           (collection) => collection.slug === accountSlug,
         ) as CollectionConfig | undefined
-        const accountCollection: CollectionConfig = {
+        let accountCollection: CollectionConfig = {
           slug: accountSlug,
           admin: {
-            ...existingAccountCollection?.admin,
-            hidden: pluginOptions.accounts?.hidden,
             useAsTitle: 'accountId',
             description: 'Accounts are used to store user accounts for authentication providers',
+            ...existingAccountCollection?.admin,
+            hidden: pluginOptions.accounts?.hidden,
+          },
+          hooks: {
+            afterChange: [
+              ...(existingAccountCollection?.hooks?.afterChange ?? []),
+              getSyncPasswordToUserHook({
+                userSlug,
+                accountSlug,
+              }),
+            ],
+          },
+          access: {
+            create: isAdminWithRoles({ adminRoles }),
+            delete: isAdminWithRoles({ adminRoles }),
+            read: isAdminOrCurrentUserWithRoles({ adminRoles, idField: 'user' }),
+            update: isAdminWithRoles({ adminRoles }),
+            ...(existingAccountCollection?.access ?? {}),
           },
           fields: [
             ...(existingAccountCollection?.fields ?? []),
@@ -363,21 +467,26 @@ export function buildCollectionConfigs({
               label: 'Password',
               admin: {
                 readOnly: true,
+                hidden: true,
                 description:
                   'The hashed password of the account. Mainly used for email and password authentication',
               },
             },
+            ...getTimestampFields(),
           ],
-          timestamps: true,
           ...existingAccountCollection,
         }
+        if (pluginOptions.accounts?.collectionOverrides) {
+          accountCollection = pluginOptions.accounts.collectionOverrides({ collection: accountCollection })
+        }
+        
         enhancedCollections.push(accountCollection)
         break
       case baseCollectionSlugs.sessions:
         const existingSessionCollection = incomingCollections.find(
           (collection) => collection.slug === sessionSlug,
         ) as CollectionConfig | undefined
-        const sessionCollection: CollectionConfig = {
+        let sessionCollection: CollectionConfig = {
           slug: sessionSlug,
           admin: {
             ...existingSessionCollection?.admin,
@@ -392,6 +501,7 @@ export function buildCollectionConfigs({
               type: 'relationship',
               relationTo: userSlug,
               required: true,
+              saveToJWT: true,
               index: true,
               admin: {
                 readOnly: true,
@@ -404,6 +514,7 @@ export function buildCollectionConfigs({
               required: true,
               unique: true,
               index: true,
+              saveToJWT: true,
               label: 'Token',
               admin: {
                 description: 'The unique session token',
@@ -415,6 +526,7 @@ export function buildCollectionConfigs({
               type: 'date',
               required: true,
               label: 'Expires At',
+              saveToJWT: true,
               admin: {
                 description: 'The date and time when the session will expire',
                 readOnly: true,
@@ -424,6 +536,7 @@ export function buildCollectionConfigs({
               name: 'ipAddress',
               type: 'text',
               label: 'IP Address',
+              saveToJWT: true,
               admin: {
                 description: 'The IP address of the device',
                 readOnly: true,
@@ -433,13 +546,14 @@ export function buildCollectionConfigs({
               name: 'userAgent',
               type: 'text',
               label: 'User Agent',
+              saveToJWT: true,
               admin: {
                 description: 'The user agent information of the device',
                 readOnly: true,
               },
             },
+            ...getTimestampFields(),
           ],
-          timestamps: true,
           ...existingSessionCollection,
         }
         if (baPlugins) {
@@ -475,6 +589,11 @@ export function buildCollectionConfigs({
             }
           })
         }
+
+        if (pluginOptions.sessions?.collectionOverrides) {
+          sessionCollection = pluginOptions.sessions.collectionOverrides({ collection: sessionCollection })
+        }
+
         enhancedCollections.push(sessionCollection)
         break
       case baseCollectionSlugs.verifications:

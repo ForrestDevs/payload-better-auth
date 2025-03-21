@@ -38,12 +38,12 @@ export default function AccountSwitcher({ sessions }: { sessions: Session[] }) {
         >
           <Avatar className="mr-2 h-6 w-6">
             <AvatarImage
-              src={currentUser?.user.image || ""}
-              alt={currentUser?.user.name}
+              src={currentUser?.user?.image || ""}
+              alt={currentUser?.user?.name}
             />
-            <AvatarFallback>{currentUser?.user.name.charAt(0)}</AvatarFallback>
+            <AvatarFallback>{currentUser?.user?.name?.charAt(0)}</AvatarFallback>
           </Avatar>
-          <span className="truncate">{currentUser?.user.name}</span>
+          <span className="truncate">{currentUser?.user?.name}</span>
           <ChevronDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -59,14 +59,14 @@ export default function AccountSwitcher({ sessions }: { sessions: Session[] }) {
                 <div className="flex items-center">
                   <Avatar className="mr-2 h-5 w-5">
                     <AvatarImage
-                      src={currentUser?.user.image || ""}
-                      alt={currentUser?.user.name}
+                      src={currentUser?.user?.image || ""}
+                      alt={currentUser?.user?.name}
                     />
                     <AvatarFallback className="bg-primary/10 text-primary">
-                      {currentUser?.user.name.charAt(0)}
+                      {currentUser?.user?.name?.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="font-medium">{currentUser?.user.name}</span>
+                  <span className="font-medium">{currentUser?.user?.name}</span>
                 </div>
               </CommandItem>
             </CommandGroup>

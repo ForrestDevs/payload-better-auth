@@ -4,6 +4,9 @@ import {
   betterAuthPluginSlugs,
   baseCollectionSlugs,
 } from './config.js'
+import { ensurePasswordSetBeforeUserCreate } from './ensure-password-set-before-create.js'
+import { verifyPassword } from './password.js'
+import { hashPassword } from './password.js'
 
 /**
  * Sanitizes the BetterAuth options
@@ -45,6 +48,48 @@ export function sanitizeBetterAuthOptions(
     modelName: verificationCollectionSlug,
   }
 
+  res.emailAndPassword = {
+    ...(baOptions?.emailAndPassword ?? {}),
+    enabled: baOptions?.emailAndPassword?.enabled ?? true,
+  }
+
+  if (res.emailAndPassword.enabled) {
+    res.emailAndPassword.password = {
+      ...(res.emailAndPassword.password ?? {}),
+      verify: async ({ hash, password }) => {
+        return await verifyPassword({ hash, password })
+      },
+      hash: async (password) => {
+        return await hashPassword(password)
+      },
+    }
+  }
+
+  const originalSendVerificationEmail = baOptions?.emailVerification?.sendVerificationEmail;
+
+  // Only override sendVerificationEmail if the developer provided their own implementation
+  if (typeof originalSendVerificationEmail === 'function') {
+    res.emailVerification = res?.emailVerification || {};
+    res.emailVerification.sendVerificationEmail = async (data, request) => {
+      try {
+        const user = data.user;
+        const createdAt = new Date(user.createdAt);
+        const now = new Date();
+        // If the user was created less than one minute ago, don't send the verification email
+        // as we rely on payload to send the initial email
+        if (now.getTime() - createdAt.getTime() < 60000) {
+          return;
+        }
+        
+        await originalSendVerificationEmail(data, request);
+      } catch (error) {
+        console.error('Error sending verification email:', error);
+      }
+    }
+  }
+
+  ensurePasswordSetBeforeUserCreate(res)
+
   if (res.plugins) {
     try {
       const supportedPlugins = res.plugins.filter((plugin) => {
@@ -63,9 +108,9 @@ export function sanitizeBetterAuthOptions(
                 ),
             )
             .map((p) => p.id)
-            .join(
-              ', ',
-            )}. Supported plugins are: ${Object.values(supportedBetterAuthPluginIds).join(', ')}. 
+            .join(', ')}. Supported plugins are: ${Object.values(supportedBetterAuthPluginIds).join(
+            ', ',
+          )}. 
             These plugins will be ignored.`,
         )
       }

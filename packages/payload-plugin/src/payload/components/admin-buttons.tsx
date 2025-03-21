@@ -1,26 +1,15 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { CSSProperties, useEffect, useState } from 'react'
 import { adminClient } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useParams, usePathname, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Toaster } from 'sonner'
+import { Button } from '@payloadcms/ui'
 import './styles.css'
 
 import '@payloadcms/ui/styles.css'
-
-function getIdFromUrl(path: string, userSlug: string) {
-  const urlParts = path.split('/')
-
-  // Find the part after the userSlug in the URL
-  const userSlugIndex = urlParts.findIndex((part) => part === userSlug)
-  if (userSlugIndex !== -1 && userSlugIndex < urlParts.length - 1) {
-    return urlParts[userSlugIndex + 1]
-  }
-  const potentialIdFromUrl = urlParts[urlParts.length - 1]
-  return potentialIdFromUrl
-}
 
 async function getDocumentData(id: string, path: string) {
   const apiUrl = `${path}/api`
@@ -77,6 +66,7 @@ async function getDocumentData(id: string, path: string) {
 export default function AdminButtons({ userSlug }: { userSlug: string }) {
   const router = useRouter()
   const path = usePathname()
+  const params = useParams()
   const [id, setId] = useState('')
   const [documentData, setDocumentData] = useState<any>(null)
 
@@ -86,15 +76,20 @@ export default function AdminButtons({ userSlug }: { userSlug: string }) {
 
   useEffect(() => {
     async function fetchDocumentData() {
-      const id = getIdFromUrl(path, userSlug)
+      // Get the ID from the params.segments array
+      const segments = params.segments as string[]
+      const userSlugIndex = segments.findIndex((segment) => segment === userSlug)
+      const id =
+        userSlugIndex !== -1 && userSlugIndex < segments.length - 1
+          ? segments[userSlugIndex + 1]
+          : segments[segments.length - 1]
+
       const documentData = await getDocumentData(id, path)
-      console.log('doc id', id)
-      console.dir(['doc data', documentData], { depth: 2, colors: true })
       setId(id)
       setDocumentData(documentData)
     }
     fetchDocumentData()
-  }, [])
+  }, [params, path, userSlug])
 
   const handleImpersonate = async () => {
     await authClient.admin.impersonateUser({
@@ -161,137 +156,55 @@ export default function AdminButtons({ userSlug }: { userSlug: string }) {
 
   return (
     <>
-      <div
-        className="admin-actions-container"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          padding: '10px',
-          marginBottom: '24px',
-          border: '1px solid var(--theme-elevation-150)',
-          borderRadius: 'var(--style-radius-s)',
-          backgroundColor: 'var(--theme-input-bg',
-          color: 'var(--text-color, #334155)',
-          transitionProperty: 'border, box-shadow, background-color',
-          transitionDuration: '.1s, .1s, .5s',
-          transitionTimingFunction: 'cubic-bezier(0, .2, .2, 1)',
-
-        }}
-        onMouseOver={(e) => (e.currentTarget.style.border = '1px solid var(--theme-elevation-250)')}
-        onMouseOut={(e) => (e.currentTarget.style.border = '1px solid var(--theme-elevation-150)')}
-      >
-        <h3
-          style={{
-            margin: '0 0 0px 0',
-            fontSize: '16px',
-            fontWeight: '600',
-            color: 'var(--heading-color, #334155)',
-          }}
-        >
-          Admin Actions
-        </h3>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-          <button
-            onClick={handleImpersonate}
-            type="button"
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'var(--impersonate-bg, #f97316)',
-              color: 'var(--button-text, white)',
-              border: '1px solid var(--impersonate-border, #ea580c)',
-              borderRadius: 'var(--style-radius-s)',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onMouseOver={(e) =>
-              (e.currentTarget.style.backgroundColor = 'var(--impersonate-hover, #ea580c)')
-            }
-            onMouseOut={(e) =>
-              (e.currentTarget.style.backgroundColor = 'var(--impersonate-bg, #f97316)')
-            }
-          >
+      <style>{`
+        .admin-actions-container {
+          display: flex;
+          flex-direction: column;
+        }
+        .admin-actions-container h3 {
+          margin-bottom: 1rem;
+        }
+        .admin-actions-container .btn {
+          margin-block: 0.5rem;
+        }
+        .ban-button {
+          background-color: oklch(0.258 0.092 26.042);
+          color: oklch(0.577 0.245 27.325);
+          border: 1px solid oklch(0.396 0.141 25.723);
+          &:hover {
+            color: #fff;
+            background-color: oklch(0.505 0.213 27.518);
+          }
+        }
+        .revoke-sessions-button {
+          --theme-elevation-800: oklch(0.396 0.141 25.723);
+          color: oklch(0.637 0.237 25.331);
+          &:hover {
+            --theme-elevation-400: oklch(0.396 0.141 25.723);
+            color: #fff;
+            background-color: oklch(0.396 0.141 25.723);
+          }
+        }
+      `}</style>
+      <div className="admin-actions-container">
+        <h3>Admin Actions</h3>
+        <div style={{ display: 'flex', flexWrap: 'wrap', columnGap: '0.5rem' }}>
+          <Button onClick={handleImpersonate} buttonStyle="primary">
             Impersonate
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleRevokeAllSessions}
-            type="button"
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'var(--revoke-bg, #64748b)',
-              color: 'var(--button-text, white)',
-              border: '1px solid var(--revoke-border, #475569)',
-              borderRadius: 'var(--style-radius-s)',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onMouseOver={(e) =>
-              (e.currentTarget.style.backgroundColor = 'var(--revoke-hover, #475569)')
-            }
-            onMouseOut={(e) =>
-              (e.currentTarget.style.backgroundColor = 'var(--revoke-bg, #64748b)')
-            }
+            buttonStyle="secondary"
+            className="revoke-sessions-button"
           >
             Revoke All Sessions
-          </button>
-          <button
-            onClick={handleBan}
-            type="button"
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'var(--ban-bg, #ef4444)',
-              color: 'var(--button-text, white)',
-              border: '1px solid var(--ban-border, #dc2626)',
-              borderRadius: 'var(--style-radius-s)',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onMouseOver={(e) =>
-              (e.currentTarget.style.backgroundColor = 'var(--ban-hover, #dc2626)')
-            }
-            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--ban-bg, #ef4444)')}
-          >
+          </Button>
+          <Button onClick={handleBan} buttonStyle="error" className="ban-button">
             Ban
-          </button>
-          <button
-            onClick={handleUnban}
-            type="button"
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'var(--unban-bg, #22c55e)',
-              color: 'var(--button-text, white)',
-              border: '1px solid var(--unban-border, #16a34a)',
-              borderRadius: 'var(--style-radius-s)',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onMouseOver={(e) =>
-              (e.currentTarget.style.backgroundColor = 'var(--unban-hover, #16a34a)')
-            }
-            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'var(--unban-bg, #22c55e)')}
-          >
+          </Button>
+          <Button onClick={handleUnban} buttonStyle="primary">
             Unban
-          </button>
+          </Button>
         </div>
       </div>
       <Toaster />

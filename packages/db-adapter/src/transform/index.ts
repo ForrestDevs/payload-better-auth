@@ -149,6 +149,7 @@ export const createTransform = (
         transformedData[dataField] = data[dataField];
       }
     }
+
     return transformedData;
   }
 
